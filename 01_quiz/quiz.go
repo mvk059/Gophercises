@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 // Problem statement: https://github.com/gophercises/quiz
@@ -14,6 +15,14 @@ import (
 type problem struct {
 	question string
 	answer   string
+}
+
+func readArguments() (string, int) {
+	filename := flag.String("csv", "problems.csv", "a CSV file in the format of [question, answer]")
+	timeLimit := flag.Int("limit", 30, "the time limit for the quiz in seconds")
+	//help := flag.Bool("h", false, "Show usage information")
+	flag.Parse()
+	return *filename, *timeLimit
 }
 
 // readCSVFile reads the CSV file and returns all the records
@@ -39,7 +48,7 @@ func readCSVFile(filename string) ([][]string, error) {
 }
 
 func parseLines(lines [][]string) []problem {
-	values := make([]problem, len(lines))
+	var values = make([]problem, len(lines))
 	for i, line := range lines {
 		values[i] = problem{question: line[0], answer: line[1]}
 	}
@@ -47,19 +56,32 @@ func parseLines(lines [][]string) []problem {
 }
 
 // processQuestions processes the questions from the CSV records
-func processQuestions(problems []problem, getUserInput func() string) int {
+func processQuestions(problems []problem, getUserInput func() string, timeLimit int) int {
 	score := 0
 	totalQuestions := len(problems)
+	timer := time.NewTimer(time.Duration(timeLimit) * time.Second)
 
 	for i, record := range problems {
 		// Print the first value
 		fmt.Printf("Problem %d: %s = ", i+1, record.question)
+		answerCh := make(chan string)
 
-		// Get user input
-		userInput := getUserInput()
+		go func() {
+			// Get user input
+			userInput := getUserInput()
+			answerCh <- userInput
+		}()
 
-		if strings.TrimSpace(userInput) == record.answer {
-			score++
+		select {
+
+		case <-timer.C:
+			fmt.Printf("\nYou scored %d out of %d\n", score, totalQuestions)
+			return score
+
+		case userInput := <-answerCh:
+			if strings.TrimSpace(userInput) == record.answer {
+				score++
+			}
 		}
 	}
 
@@ -73,17 +95,10 @@ func exit(message string) {
 }
 
 func main() {
-	filename := flag.String("csv", "problems.csv", "a CSV file in the format of [question, answer]")
-	help := flag.Bool("h", false, "Show usage information")
 
-	flag.Parse()
+	filename, timeLimit := readArguments()
 
-	if *help {
-		flag.PrintDefaults()
-		return
-	}
-
-	records, err := readCSVFile(*filename)
+	records, err := readCSVFile(filename)
 	if err != nil {
 		exit("")
 	}
@@ -96,5 +111,5 @@ func main() {
 		return input
 	}
 
-	processQuestions(problems, getUserInput)
+	processQuestions(problems, getUserInput, timeLimit)
 }
